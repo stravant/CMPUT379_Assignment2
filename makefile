@@ -17,7 +17,6 @@ test: server
 	./server_f 8000 /cscome/langen/CMPUT_Assignment2/testsrv /cshome/langen/CMPUT_Assignment2/logfile
 
 resettest:
-	rm -rf testsrv
 	mkdir -p testsrv
 	rm -rf logfile
 	echo "" > logfile

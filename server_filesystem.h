@@ -41,6 +41,6 @@ void server_fs_destroy(struct server_filesystem *fs);
 /*
  * Append text to the log file
  */
-void server_fs_log(struct server_filesystem *fs, char* message);
+void server_fs_log(struct server_filesystem *fs, char* format, ...);
 
 #endif

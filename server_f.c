@@ -5,6 +5,7 @@
 
 #include <setjmp.h>
 #include <memory.h>
+#include <stdlib.h>
 
 #include "args.h"
 #include "server_filesystem.h"
@@ -23,6 +24,8 @@ void serve_requests(struct server_filesystem *fs, struct server_state *state) {
 
 				/* Shutdown communications on the fd and close the fd handle */
 				shutdown(fd, SHUT_RDWR);
+
+				printf("Done request\n");
 
 				/* This fork has completed, end the process here */
 				exit(0);
@@ -104,7 +107,7 @@ int main(int argc, char *argv[]) {
 		serve_requests(&fs, &server);
 	} else {
 		/* User Ctrl-C requested exit (if not daemonized) */
-		printf("Shutting down...\n");
+		printf("\nShutdown Requested, terminating...\n");
 	}
 
 	/* Close the server and fs */

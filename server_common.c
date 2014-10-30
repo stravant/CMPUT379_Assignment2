@@ -2,12 +2,16 @@
 #include "server_common.h"
 
 #include <memory.h>
+#include <stdio.h>
 
 #define MAX_REQUESTS 3
 
 int server_create(struct server_state *state, int port) {
+	int err;
+
 	/* Create a new internet socket */
 	if ((state->socketfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) { /* 0 -> IP */
+		printf("socket() error\n");
 		return SERVER_ERROR;
 	}
 
@@ -16,14 +20,16 @@ int server_create(struct server_state *state, int port) {
 	state->addr.sin_family = AF_INET;
 	state->addr.sin_port = htons(port);
 	state->addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	if (bind(state->socketfd, (struct sockaddr*)&state->addr, 
-		sizeof(state->addr))) 
+	if ((err = bind(state->socketfd, (struct sockaddr*)&state->addr, 
+		sizeof(state->addr)))) 
 	{
+		printf("bind() error: %s\n", strerror(err));
 		return SERVER_ERROR;
 	}
 
 	/* Start listening */
 	if (listen(state->socketfd, MAX_REQUESTS)) {
+		printf("listen() error\n");
 		return SERVER_ERROR;
 	}
 
