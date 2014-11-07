@@ -8,12 +8,21 @@
 
 int server_create(struct server_state *state, int port) {
 	int err;
+	int reuseOpt;
 
 	/* Create a new internet socket */
 	if ((state->socketfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) { /* 0 -> IP */
 		printf("socket() error\n");
 		return SERVER_ERROR;
 	}
+
+	/* Change the socket to reuse connections mode, so that we don't run
+	 * lack of connections problems when restarting the server.
+	 */
+	reuseOpt = 1; /* 1 -> TRUE */
+	setsockopt(state->socketfd, 
+		SOL_SOCKET, SO_REUSEADDR, 
+		&reuseOpt, sizeof(reuseOpt));
 
 	/* Bind the socket to the port */
 	memset(&state->addr, 0x0, sizeof(state->addr));
