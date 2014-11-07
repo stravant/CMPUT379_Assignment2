@@ -14,13 +14,14 @@
 
 void serve_requests(struct server_filesystem *fs, struct server_state *state) {
 	for (;;) {
-		int fd = server_listen(state);
-		printf("Got request\n");
+		char *addr;
+		int fd = server_listen(state, &addr);
+		printf("Got request, from: %s\n", addr);
 		if (fd > 0) {
 			/* Good request, fork off to a child process to handle it in */
 			if (fork() == 0) {
 				/* Serve the request as an http request */
-				handle_http_request(fs, fd);
+				handle_http_request(fs, fd, addr);
 
 				/* Shutdown communications on the fd and close the fd handle */
 				shutdown(fd, SHUT_RDWR);

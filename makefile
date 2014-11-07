@@ -14,7 +14,7 @@ server: $(OBJECTS)
 	$(CC) $(CFLAGS) -c $<
 
 test: server
-	./server_f 8000 /cscome/langen/CMPUT_Assignment2/testsrv /cshome/langen/CMPUT_Assignment2/logfile
+	./server_f 8000 /cshome/langen/CMPUT_Assignment2/testsrv /cshome/langen/CMPUT_Assignment2/logfile
 
 resettest:
 	mkdir -p testsrv

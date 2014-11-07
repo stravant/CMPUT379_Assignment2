@@ -3,6 +3,8 @@
 
 #include <memory.h>
 #include <stdio.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #define MAX_REQUESTS 3
 
@@ -45,7 +47,7 @@ int server_create(struct server_state *state, int port) {
 	return SERVER_OKAY;
 }
  
-int server_listen(struct server_state *state) {
+int server_listen(struct server_state *state, char **addr) {
 	/* Set up listener info */
 	struct sockaddr_in connection_addr;
 	socklen_t connection_len = sizeof(connection_addr);
@@ -54,6 +56,9 @@ int server_listen(struct server_state *state) {
 	/* Wait for an incomming connection */
 	int connectionfd = accept(state->socketfd, 
 		(struct sockaddr*)&connection_addr, &connection_len);
+
+	/* The source IP */
+	*addr = inet_ntoa(connection_addr.sin_addr);
 
 	/* Return the connection if sucessfull */
 	if (connectionfd < 0) {

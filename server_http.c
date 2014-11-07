@@ -32,7 +32,7 @@ struct http_method {
 	struct str_buffer_ptr version;
 };
 
-char *parse_method(struct http_method *method,
+int parse_method(struct http_method *method,
 	char *source_buffer, size_t source_length)
 {
 	/* Set up parsing variables */
@@ -77,7 +77,7 @@ char *parse_method(struct http_method *method,
 	        (method->version.length > 0));
 }
 
-char *parse_header(struct http_header *header, 
+int parse_header(struct http_header *header, 
 	char *source_buffer, size_t source_length) 
 {
 	/* Set up parsing variables */
@@ -108,7 +108,7 @@ char *parse_header(struct http_header *header,
 			++ptr;
 
 		/* Return success, the value may have a zero length */
-		return ptr;
+		return 1;
 	} else {
 		/* No separator, bad header */
 		return 0;
@@ -146,6 +146,7 @@ void format_date(char *buffer, size_t len) {
 	/*
 	 * Code taken from example on:
 	 *  http://linux.die.net/man/3/strftime
+	 * And modified
 	 */
 	time_t t;
 	struct tm *tmp;
@@ -154,41 +155,224 @@ void format_date(char *buffer, size_t len) {
 	strftime(buffer, len, "%a %d %b %Y %T GMT", tmp);
 }
 
-const char *response_400 = 
+/* bad request */
+const char *response_400[2] = {
 	"HTTP/1.1 400 Bad Request\n"
-	"Date: Mon 21 Jan 2008 18:06:16 GMT\n"
+	"Date: %s\n"
 	"Content‐Type: text/html\n"
-	"Content‐Length: 107\n"
+	"Content‐Length: %d\n"
 	"\n"
+	,
 	"<html><body>\n"
 	"<h2>Malformed Request</h2>\n"
 	"Your browser sent a request I could not understand.\n"
-	"</body></html>";
+	"</body></html>"
+};
 
-/* 400 Bad Request */
-void http_response_400(struct server_filesystem *fs, int connection_fd) {
-
-}
-
-const char *response_404 = 
+/* not found */
+const char *response_404[2] = {
 	"HTTP/1.1 404 Not Found\n"
-	"Date: Mon 21 Jan 2008 18:06:16 GMT\n"
+	"Date: %s\n"
 	"Content‐Type: text/html\n"
-	"Content‐Length: 117\n"
+	"Content‐Length: %d\n"
 	"\n"
+	,
 	"<html><body>\n"
 	"<h2>Document not found</h2>\n"
 	"You asked for a document that doesn't exist. That is so sad.\n"
-	"</body></html>";
+	"</body></html>"
+};
 
-/* 404 Not Found */
-void http_response_404(struct server_filesystem *fs, int connection_fd) {
+/* forbidden */
+const char *response_403[2] = {
+	"HTTP/1.1 403 Forbidden\n"
+	"Date: %s\n"
+	"Content-Type: text/html\n"
+	"Content-Length: %d\n"
+	"\n"
+	,
+	"<html><body>\n"
+	"<h2>Permission Denied</h2>\n"
+	"You asked for a document you are not permitted to see. It sucks to be you.\n" 
+	"</body></html>"
+};
 
+/* internal server error */
+const char *response_500[2] = {
+	"HTTP/1.1 500 Internal Server Error\n"
+	"Date: %s\n"
+	"Content-Type: text/html\n"
+	"Content-Length: %d\n"
+	"\n"
+	,
+	"<html><body>\n"
+	"<h2>Oops. That Didn't work</h2>\n"
+	"I had some sort of problem dealing with your request. Sorry, I'm lame.\n"
+	"</body></html>"
+};
+
+/* Method not allowed */
+const char *response_405[2] = {
+	"HTTP/1.1 405 Method Not Allowed\n"
+	"Date: %s\n"
+	"Content-Type: text/html\n"
+	"Content-Length: %d\n"
+	"\n"
+	,
+	"<html><body>\n"
+	"<h2>Oops. That Didn't work</h2>\n"
+	"I had some sort of problem dealing with your request. Sorry, I'm lame.\n"
+	"</body></html>"
+};
+
+/* any of the above constant responses */
+void http_response_const(struct server_filesystem *fs, int connection_fd, 
+	const char* resp[2])
+{
+	/* Get date */
+	char date[200];
+	format_date(date, 200);
+
+	/* Length */
+	size_t length = strlen(resp[1]);
+
+	/* Write the response */
+	dprintf(connection_fd, resp[0], date, length);
+	write(connection_fd, resp[1], strlen(resp[1]));
 }
 
-/* 
+/* Okay header fragment */
+const char *response_200 =
+	"HTTP/1.1 200 OK\n"
+	"Date: %s\n"
+	"Content-Type: text/html\n"
+	"Content-Length: %d\n"
+	"\n";
 
-void handle_http_request(struct server_filesystem *fs, int connection_fd) {
+void http_response_log(struct server_filesystem *fs, char *addr, 
+	struct http_method *method, char *date, char *response)
+{
+	server_fs_log(fs, "%s\t%s\t%.*s %.*s %.*s\t%s\n",
+		date,
+		addr,
+		method->method.length, method->method.ptr,
+		method->url.length, method->url.ptr,
+		method->version.length, method->version.ptr,
+		response);
+}
+
+/* Decide what kind of response a given method needs */
+void http_response_dispatch(struct server_filesystem *fs, int connection_fd,
+	char *addr, struct http_method *method) 
+{
+	/* Null terminate the file to get name */
+	char *filename = malloc(method->url.length + 1);
+	memcpy(filename, method->url.ptr, method->url.length);
+	filename[method->url.length] = '\0';
+
+	/* Get date */
+	char date[200];
+	format_date(date, 200);
+
+	/* Check the method */
+	if (strncmp("GET", method->method.ptr, method->method.length)) {
+		/* Request is not a get, issue 405 bad method */
+		http_response_const(fs, connection_fd, response_405);
+		http_response_log(fs, addr, method, date, "403 Method Not Allowed");
+		return;
+	}
+
+	/* Path must start with a slash */
+	if (filename[0] != '/') {
+		http_response_const(fs, connection_fd, response_400);
+		http_response_log(fs, addr, method, date, "400 Bad Request");	
+	}
+
+	/* Open file */
+	int fd = server_fs_open(fs, filename);
+	free(filename);
+	if (fd < 0) {
+		/* Problem opening the file for response */
+		if (fd == FS_EFILE_FORBIDDEN) {
+			http_response_const(fs, connection_fd, response_403);
+			http_response_log(fs, addr, method, date, "403 Forbidden");
+		} else if (fd == FS_EFILE_NOTFOUND) {
+			http_response_const(fs, connection_fd, response_404);
+			http_response_log(fs, addr, method, date, "404 Not Found");
+		} else {
+			http_response_const(fs, connection_fd, response_500);
+			http_response_log(fs, addr, method, date, 
+				"500 Internal Server Error");
+		}
+		return;
+	}
+
+	/* The file exists, do a 200 OK response */
+
+	/* Get the file size (seek to end and back to start) */
+	size_t fsize = lseek(fd, 0, SEEK_END);
+	size_t status = lseek(fd, 0, SEEK_SET);
+
+	/* Failed to get file length? */
+	if (fsize < 0 || status < 0) {
+		http_response_const(fs, connection_fd, response_500);
+		http_response_log(fs, addr, method, date, "500 Internal Server Error");
+		return;
+	}
+
+	/* Write headers */
+	if (dprintf(connection_fd, response_200, date, fsize) < 0) {
+		/* At this point, we may have sent some of the header already, so
+		 * the only option is to stop sending and fail; we can't start a 
+		 * 500 Internal Server Error at this point.
+		 */
+		http_response_log(fs, addr, method, date, 
+			"Connection unexpectedly terminated while "
+			"sending response header.");
+		return;
+	}
+
+	/* Write contents in chunks */
+	char dataBuffer[1024];
+	size_t total_written = 0;
+	ssize_t len;
+	while ((len = read(fd, dataBuffer, 1024))) {
+		if (len < 0) {
+			/* An error ocurred reading file */
+			break;
+		}
+		ssize_t written = write(connection_fd, dataBuffer, len);
+		if (written < 0) {
+			/* Error writing occurred */
+			break;
+		} else if (written < len) {
+			/* Couldn't write all of the data, connection was probably
+			 * closed by the client
+			 */
+			total_written += written;
+			break;
+		} else {
+			/* Write succeeded */
+			total_written += written;
+		}
+	}
+
+	/* Log how the 200 OK response went (how much of the data we
+	 * managed to send out of the total file size.
+	 */
+	server_fs_log(fs, "%s\t%s\t%.*s %.*s %.*s\t200 OK %d/%d\n",
+		date,
+		addr,
+		method->method.length, method->method.ptr,
+		method->url.length, method->url.ptr,
+		method->version.length, method->version.ptr,
+		total_written,
+		fsize);	
+}
+
+void handle_http_request(struct server_filesystem *fs, int connection_fd,
+	char *addr) 
+{
 	size_t buffer_capacity = BUFFER_INITIAL;
 	size_t buffer_size = 0;
 	char *buffer = malloc(buffer_capacity + 1);
@@ -240,7 +424,7 @@ void handle_http_request(struct server_filesystem *fs, int connection_fd) {
 				/* Process this line */
 				if (line_count == 1) {
 					/* Process method */
-					char *result = parse_method(&method, 
+					int result = parse_method(&method, 
 						buffer + line_start_index,
 						buffer_index - line_start_index + 1);
 
@@ -252,7 +436,7 @@ void handle_http_request(struct server_filesystem *fs, int connection_fd) {
 				} else {
 					/* Process a header */
 					struct http_header header;
-					char *result = parse_header(&header,
+					int result = parse_header(&header,
 						buffer + line_start_index,
 						buffer_index - line_start_index + 1);
 
@@ -348,26 +532,8 @@ void handle_http_request(struct server_filesystem *fs, int connection_fd) {
 		}
 	}
 
-	/* Log the request */
-	printf("Request:\n");
-	printf(" |Method: %.*s\n",  method.method.length,  method.method.ptr);
-	printf(" |URL: %.*s\n",     method.url.length,     method.url.ptr);
-	printf(" |Version: %.*s\n", method.version.length, method.version.ptr);
-
-
-
-	/* debug print request */
-	printf("Request<%d>: %s\n", buffer_index, buffer);
-
-
-	/*server_fs_log(fs, ">REQUEST<%d>: %s\n", buffer_index, buffer);*/
-	const char *response =
-		"HTTP/1.1 200 OK\n"
-		"\n"
-		"Hello, World!\n";
-
-	/* Write out a response */
-	write(connection_fd, response, strlen(response));
+	/* Serve the response */
+	http_response_dispatch(fs, connection_fd, addr, &method);
 
 cleanup:
 	/* Free the request content */

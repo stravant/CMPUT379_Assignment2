@@ -32,11 +32,12 @@ int server_create(struct server_state *state, int port);
  * Wait for and accept an incomming connection.
  * Parameters:
  *   state: The server state to listen on
+ *   addr:  Pointer to the address that the connection was accepted from
  * Returns:
  *   (positive) A file descriptor representing the opened connection.
  *   (negative) An error code from above
  */ 
-int server_listen(struct server_state *state);
+int server_listen(struct server_state *state, char **addr);
 
 /*
  * Destroy a server
