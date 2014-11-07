@@ -11,17 +11,66 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 
+/* Private function forward declarations */
+int check_path(char *path);
+
+/* 
+ * Check that a path does not "ascend" upwards past it's root using `..`
+ * expressions. That is, the resulting directory for the path should not be
+ * higher up in the hierarchy than the base directory for the path.
+ * Also changes backslashes -> forward slashes in the path
+ * Returns 0 -> path does ascend too far
+ *         1 -> path is okay
+ */
+int check_path(char *path) {
+	int ptr;
+	size_t pathlen;
+	int depth;
+
+	pathlen = strlen(path);
+	depth = -1;
+	for (ptr = 0; ptr < pathlen; ++ptr) {
+		/* 
+		 * Fix backslashes while we're at it, most we servers will
+		 * accept backslashes as though they were slashes. 
+		 */
+		if (path[ptr] == '\\')
+			path[ptr] = '/';
+
+		/* Check for ascend / descend */
+		if (path[ptr] == '/') {
+			/* decend */
+			++depth;
+		} else if (path[ptr] == '.') {
+			if ((ptr+1 < pathlen) && (path[ptr+1] == '.')) {
+				/* ascend */
+				--depth;
+
+				if (depth < 0) {
+					/* Ascended up past the root dir!! Not allowed */
+					return 0;
+				}
+			}
+		}
+	}	
+
+	return 1;
+}
+
+
 int server_fs_create(struct server_filesystem *fs, char *rootDirectory, 
 	char *logFile)
 {
+	struct stat st_buf;
+	int status;
+
 	/*
 	 * Check that the rootDirectory is a valid folder
 	 * Code from:
 	 *  http://stackoverflow.com/questions/1036625/differentiate-
 	 *   between-a-unix-directory-and-file-in-c
 	 */
-	struct stat st_buf;
-	int status = stat(rootDirectory, &st_buf);
+	status = stat(rootDirectory, &st_buf);
 	if (status == -1 || !S_ISDIR(st_buf.st_mode)) {
 		return FS_BADROOT;
 	} 
@@ -48,71 +97,75 @@ int server_fs_create(struct server_filesystem *fs, char *rootDirectory,
 	return FS_OKAY;
 }
 
+
 int server_fs_open(struct server_filesystem *fs, char *path) {
+	size_t totallen;
+	char *fullpath;
+	struct stat st_buf;
+	int status;
+	int fd;
+
 	/* 
 	 * Check for /../blah shenanigans in the path: Don't let the user
 	 * use ..s to ascend up past the root directory and access file that
-	 * we don't want to be serving. 
+	 * we don't want to be serving.
 	 */
-	int ptr;
-	size_t pathlen = strlen(path);
-	int depth = -1;
-	for (ptr = 0; ptr < pathlen; ++ptr) {
-		/* 
-		 * Fix backslashes while we're at it, most we servers will
-		 * accept backslashes as though they were slashes. 
-		 */
-		if (path[ptr] == '\\')
-			path[ptr] = '/';
-
-		/* Check for ascend / descend */
-		if (path[ptr] == '/') {
-			/* decend */
-			++depth;
-			printf("Descend -> %d\n", depth);
-		} else if (path[ptr] == '.') {
-			if ((ptr+1 < pathlen) && (path[ptr+1] == '.')) {
-				/* ascend */
-				--depth;
-				printf("Ascend -> %d\n", depth);
-
-				if (depth < 0) {
-					/* Ascended up past the root dir!! Not allowed */
-					return FS_EFILE_FORBIDDEN;
-				}
-			}
-		}
+	if (!check_path(path)) {
+		return FS_EFILE_FORBIDDEN;
 	}
 
 	/* 
 	 * Concatenate the path with the server root directory into a single 
 	 * path entry.
 	 */
-	size_t totallen = strlen(fs->root_dir) + strlen(path);
-	char *fullpath = malloc(totallen + 1);
+	totallen = strlen(fs->root_dir) + strlen(path);
+	fullpath = malloc(totallen + 1);
 	strcpy(fullpath, fs->root_dir);
 	strcpy(fullpath + strlen(fs->root_dir), path);
 	fullpath[totallen] = '\0';
 
+	/* Check that the file is a file and not a directory */
+	status = stat(fullpath, &st_buf);
+	if (status == -1) {
+		return FS_EFILE_NOTFOUND;
+	}
+	if (!S_ISREG(st_buf.st_mode)) {
+		return FS_EFILE_FORBIDDEN;
+	}
+
 	/* Try to open the file */
-	printf("Opening path: `%s`\n", fullpath);
-	int fd = open(fullpath, O_RDONLY);
+	fd = open(fullpath, O_RDONLY);
 	free(fullpath);
+
+	/* Return translated status */
 	if (fd == -1)
 		return FS_EFILE_NOTFOUND;
 	else
 		return fd;
 }
 
+
 void server_fs_destroy(struct server_filesystem *fs) {
+	/* All we have to do is close the log file */
 	close(fs->log_fd);
 }
 
+
 void server_fs_log(struct server_filesystem *fs, char* format, ...) {
+
+	/* Log the log file */
 	flock(fs->log_fd, LOCK_EX);
-	va_list arglist;
+
+	/* Print out the variable arguments */
+	/* 
+	 * Note: va_list can't be at start of function, it must be declared
+	 * immediately before it's usage.
+	 */
+	va_list arglist; 
 	va_start(arglist, format);
 	vdprintf(fs->log_fd, format, arglist);
 	va_end(arglist);
+
+	/* Unlock the log file */
 	flock(fs->log_fd, LOCK_UN);
 }

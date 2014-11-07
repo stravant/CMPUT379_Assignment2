@@ -48,24 +48,58 @@ int server_create(struct server_state *state, int port) {
 }
  
 int server_listen(struct server_state *state, char **addr) {
-	/* Set up listener info */
 	struct sockaddr_in connection_addr;
-	socklen_t connection_len = sizeof(connection_addr);
+	socklen_t connection_len;
+	int connectionfd;
+	struct timeval recv_timeout;
+	struct timeval send_timeout;
+
+	/* Set up listener info (zero it) */
+	connection_len = sizeof(connection_addr);
 	memset(&connection_addr, 0x0, connection_len);
 
 	/* Wait for an incomming connection */
-	int connectionfd = accept(state->socketfd, 
+	connectionfd = accept(state->socketfd, 
 		(struct sockaddr*)&connection_addr, &connection_len);
 
-	/* The source IP */
-	*addr = inet_ntoa(connection_addr.sin_addr);
-
-	/* Return the connection if sucessfull */
+	/* Check that the connection succeeded */
 	if (connectionfd < 0) {
 		return SERVER_ERROR;
-	} else {
-		return connectionfd;
 	}
+
+	/* 
+	 * Configure the read / write timeout on a socket
+	 * Read Timeout: 10 seconds
+	 * Write Timeout: 10 seconds
+	 * Code From: 
+	 *   http://stackoverflow.com/questions/2876024/linux-is-there-
+	 *     a-read-or-recv-from-socket-with-timeout
+	 */
+	recv_timeout.tv_sec = 10;
+	recv_timeout.tv_usec = 0;
+	if (-1 == setsockopt(connectionfd, SOL_SOCKET, SO_RCVTIMEO, 
+		(char*)&recv_timeout, sizeof(struct timeval))) 
+	{
+		/* Failed to configure, close connection and return failure */
+		close(connectionfd);
+		return SERVER_ERROR;
+	}
+
+	send_timeout.tv_sec = 10;
+	send_timeout.tv_usec = 0;
+	if (-1 == setsockopt(connectionfd, SOL_SOCKET, SO_SNDTIMEO,
+		(char*)&send_timeout, sizeof(struct timeval)))
+	{
+		/* Failed to configure, close connection and return failure */
+		close(connectionfd);
+		return SERVER_ERROR;
+	}
+
+	/* Get the source IP as a string. */
+	*addr = inet_ntoa(connection_addr.sin_addr);
+
+	/* Successful, return the connection */
+	return connectionfd;
 }
 
 void server_destroy(struct server_state *state) {

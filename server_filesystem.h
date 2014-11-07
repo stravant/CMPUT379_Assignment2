@@ -2,6 +2,7 @@
 #ifndef SERVER_FILESYSTEM_H_
 #define SERVER_FILESYSTEM_H_
 
+
 /* fs_open status codes */
 #define FS_OKAY             0
 #define FS_BADROOT         -4 /* Bad root directory to serve from */
@@ -10,11 +11,15 @@
 #define FS_EFILE_FORBIDDEN -2 /* Use of /.. or other forbidden constructs */
 #define FS_EFILE_INTERNAL  -3 /* Internal problem accessing the file */
 
+/*
+ * A structure representing an opened server file system.
+ */
 struct server_filesystem {
 	char *root_dir;
 	char *log_dir;
 	int log_fd;
 };
+
 
 /*
  * Initialize a server file system to read from a given root directory, and
@@ -23,6 +28,7 @@ struct server_filesystem {
  */
 int server_fs_create(struct server_filesystem *fs, char *rootDirectory, 
 	char *logDirectory);
+
 
 /*
  * Open the file with the given path on the server, relative to the root
@@ -33,14 +39,19 @@ int server_fs_create(struct server_filesystem *fs, char *rootDirectory,
  */
 int server_fs_open(struct server_filesystem *fs, char *path);
 
+
 /*
  * Destroy a server_filesystem struct
+ * Should only be used on a server_filesystem that was successfully
+ * server_fs_create'd.
  */
 void server_fs_destroy(struct server_filesystem *fs);
 
+
 /*
- * Append text to the log file
+ * Append text to the log file for a given server_filesystem
  */
 void server_fs_log(struct server_filesystem *fs, char* format, ...);
+
 
 #endif

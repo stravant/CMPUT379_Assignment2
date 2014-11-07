@@ -2,6 +2,7 @@
 #ifndef SERVER_COMMON_H_
 #define SERVER_COMMON_H_
 
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
@@ -13,10 +14,14 @@
 #define SERVER_OKAY   0
 #define SERVER_ERROR -1
 
+/*
+ * A structure holding the information about an open server session
+ */
 struct server_state {
 	int socketfd;
 	struct sockaddr_in addr;
 };
+
 
 /*
  * Initialize a server state to be listening on the given port.
@@ -27,6 +32,7 @@ struct server_state {
  *   A status code representing whether the operation was sucessfull
  */
 int server_create(struct server_state *state, int port);
+
 
 /*
  * Wait for and accept an incomming connection.
@@ -39,9 +45,12 @@ int server_create(struct server_state *state, int port);
  */ 
 int server_listen(struct server_state *state, char **addr);
 
+
 /*
- * Destroy a server
+ * Destroy a server, should only be called on a server_state that was
+ * successfully server_create'd.
  */
 void server_destroy(struct server_state *state);
+
 
 #endif
