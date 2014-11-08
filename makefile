@@ -40,9 +40,11 @@ test_f: server_f
 test_p: server_p
 	./server_p $(TEST_ARGS)
 
+# Find any existing running servers and print their process IDs
 findserver:
 	ps -A | grep 'server_' | grep -o '^\s*[0-9]*'
 
+# Reset the log file and make the test server dir if it doesn't exist
 resettest:
 	# Make the testsrv root directory if it doesn't exist
 	mkdir -p $(TEST_DIR)
@@ -51,8 +53,10 @@ resettest:
 	rm -rf $(TEST_LOG)
 	echo "" > $(TEST_LOG)
 
+# Check the project code against the sytle guidelines for the project
 checkcode:
 	./checkcode.sh .
 
+# 
 loadtest:
 	./multiget.sh
