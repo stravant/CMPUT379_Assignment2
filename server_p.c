@@ -10,12 +10,14 @@
 #include <setjmp.h>
 #include <memory.h>
 #include <stdlib.h>
+#include <pthread.h>
 
 /* Forward declarations of functions */
 void sig_child_handler(int);
 void sig_int_handler(int);
 void install_sig_handler();
 void uninstall_sig_handler();
+void *serve_single_request(void *arg);
 void serve_requests(struct server_filesystem*, struct server_state*);
 
 /* 
@@ -35,6 +37,17 @@ sigjmp_buf before_exit;
  */
 struct sigaction server_child_sigaction;
 struct sigaction server_int_sigaction;
+
+
+/*
+ * The state that a request needs to operate
+ */
+struct request_state {
+	pthread_t thread;
+	struct server_filesystem *fs;
+	char *addr;
+	int connectionfd;
+};
 
 
 /* Signal handler for SIGCHLD */
@@ -97,6 +110,33 @@ void uninstall_sig_handler() {
 
 
 /*
+ * pthread Entry point for theads handling requests
+ * Parameters: A pointer to a request_state structure
+ *   Note: The thread owns this request_state structure, and must
+ *         free it before exiting.
+ */
+void *serve_single_request(void *arg) {
+	struct request_state *state;
+
+	/* Get the request state */
+	state = (struct request_state*)arg;
+
+	/* Call off to handle the request */
+	handle_http_request(state->fs, state->connectionfd, state->addr);
+
+	/* Shut down the connection */
+	shutdown(state->connectionfd, SHUT_RDWR);
+
+	/* Free the request_state structure */
+	free(state->addr);
+	free(state);
+
+	/* Done, exit */
+	pthread_exit(0);
+}
+
+
+/*
  * Main function to serve requests to the client, using a given server_state
  * serving documents from a given server_filesystem.
  * Each request is processed in a new child process, which terminates once
@@ -109,30 +149,25 @@ void serve_requests(struct server_filesystem *fs, struct server_state *state) {
 
 		/* Do the listen */
 		if ((fd = server_listen(state, &addr)) > 0) {
-			/* Good request, fork off to a child process to handle it in */
-			if (fork() == 0) {
-				/* 
-				 * After the fork, we have to clear the signal handlers 
-				 * so that we don't get additional signals that the child
-				 * doesn't need. 
-				 */
-				uninstall_sig_handler();
+			struct request_state *req;
 
-				/* Serve the request as an http request */
-				handle_http_request(fs, fd, addr);
+			/* Init a request structure for the request */
+			req = malloc(sizeof(struct request_state));
+			req->fs = fs;
+			req->addr = malloc(strlen(addr) + 1);
+			strcpy(req->addr, addr);
+			req->connectionfd = fd;
 
-				/* Shutdown communications on the fd and close the fd handle */
-				shutdown(fd, SHUT_RDWR);
-
-				/* 
-				 * This fork has completed, end the process here.
-				 * Note: We still have some resources open here (memory and
-				 * files), but if we exit the process they will be cleaned up
-				 * automatically. We haven't made any temporary files or
-				 * anything that requires manual cleanup.
-				 */
-				exit(0);
+			/* Start a new thread to handle it */
+			if (0 != pthread_create(&(req->thread), NULL, 
+				serve_single_request, (void*)req))
+			{
+				/* Thread creation failed, free req and stop */
+				free(req->addr);
+				free(req);
 			}
+
+			/* The thread takes ownership of req, we don't need to free it */
 		} else {
 			/* There was an error, exit */
 			printf("Error trying to accept a connection, terminating...\n");
@@ -140,6 +175,7 @@ void serve_requests(struct server_filesystem *fs, struct server_state *state) {
 		}
 	}
 }
+
 
 /* Main program entry point */
 int main(int argc, char *argv[]) {
@@ -154,16 +190,23 @@ int main(int argc, char *argv[]) {
 		return -1;
 	}
 
-	/* Open the server filesystem */
-	if ((fs_status = server_fs_create(&fs, args.server_root, args.log_file)) 
+	/* Open the server filesystem (0 -> don't use flock) */
+	if ((fs_status = server_fs_create(&fs, args.server_root, args.log_file, 0)) 
 		!= FS_OKAY) 
 	{
 		/* Failed to open the server filesystem, report and exit */
 		switch (fs_status) {
 		case FS_BADROOT:
 			printf("Could not access server root directory.\n");
+			break;
 		case FS_BADLOG:
 			printf("Could not open log file for writing.\n");
+			break;
+		case FS_INITERROR:
+			printf("Error initializing the file system access.\n");
+			break;
+		default:
+			printf("Unknown Error during startup.\n");
 		}
 		return -1;
 	}

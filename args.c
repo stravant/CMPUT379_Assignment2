@@ -32,7 +32,6 @@ int parse_args(struct server_args *result, int argc, char *argv[]) {
 	}
 
 	/* Get the paths */
-	/* TODO: Error check */
 	result->server_root = argv[2];
 	result->log_file = argv[3];
 

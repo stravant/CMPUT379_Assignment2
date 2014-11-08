@@ -59,7 +59,7 @@ int check_path(char *path) {
 
 
 int server_fs_create(struct server_filesystem *fs, char *rootDirectory, 
-	char *logFile)
+	char *logFile, int useflock)
 {
 	struct stat st_buf;
 	int status;
@@ -89,6 +89,17 @@ int server_fs_create(struct server_filesystem *fs, char *rootDirectory,
 	/* Open the log file for writing or create it if it doesn't exist */
 	if ((fs->log_fd = open(logFile, O_CREAT | O_APPEND | O_WRONLY, 0777)) == -1) {
 		return FS_BADLOG;
+	}
+
+	/* 
+	 * If we are using pthread locks on the log file, then init the pthread
+	 * lock.
+	 */
+	fs->useflock = useflock;
+	if (useflock == 0) {
+		if (0 != pthread_mutex_init(&fs->log_pthread_lock, NULL)) {
+			return FS_INITERROR;
+		}
 	}
 
 	/* Done setup, all good */
@@ -146,15 +157,23 @@ int server_fs_open(struct server_filesystem *fs, char *path) {
 
 
 void server_fs_destroy(struct server_filesystem *fs) {
-	/* All we have to do is close the log file */
+	/* Close the log file */
 	close(fs->log_fd);
+
+	/* Maybe destroy the lock */
+	if (!fs->useflock) {
+		pthread_mutex_destroy(&fs->log_pthread_lock);
+	}
 }
 
 
 void server_fs_log(struct server_filesystem *fs, char* format, ...) {
 
 	/* Log the log file */
-	flock(fs->log_fd, LOCK_EX);
+	if (fs->useflock)
+		flock(fs->log_fd, LOCK_EX);
+	else
+		pthread_mutex_lock(&fs->log_pthread_lock);
 
 	/* Print out the variable arguments */
 	/* 
@@ -167,5 +186,8 @@ void server_fs_log(struct server_filesystem *fs, char* format, ...) {
 	va_end(arglist);
 
 	/* Unlock the log file */
-	flock(fs->log_fd, LOCK_UN);
+	if (fs->useflock)
+		flock(fs->log_fd, LOCK_UN);
+	else
+		pthread_mutex_unlock(&fs->log_pthread_lock);
 }

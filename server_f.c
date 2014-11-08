@@ -112,6 +112,12 @@ void serve_requests(struct server_filesystem *fs, struct server_state *state) {
 			/* Good request, fork off to a child process to handle it in */
 			if (fork() == 0) {
 				/* 
+				 * Close our copy of the server down, since we want the parent 
+				 * process to get the requests going to this machine, not us.
+				 */
+				server_destroy(state);
+
+				/* 
 				 * After the fork, we have to clear the signal handlers 
 				 * so that we don't get additional signals that the child
 				 * doesn't need. 
@@ -154,16 +160,23 @@ int main(int argc, char *argv[]) {
 		return -1;
 	}
 
-	/* Open the server filesystem */
-	if ((fs_status = server_fs_create(&fs, args.server_root, args.log_file)) 
+	/* Open the server filesystem (1 -> use flock) */
+	if ((fs_status = server_fs_create(&fs, args.server_root, args.log_file, 1)) 
 		!= FS_OKAY) 
 	{
 		/* Failed to open the server filesystem, report and exit */
 		switch (fs_status) {
 		case FS_BADROOT:
 			printf("Could not access server root directory.\n");
+			break;
 		case FS_BADLOG:
 			printf("Could not open log file for writing.\n");
+			break;
+		case FS_INITERROR:
+			printf("Error initializing the file system access.\n");
+			break;
+		default:
+			printf("Unknown Error during startup.\n");
 		}
 		return -1;
 	}

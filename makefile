@@ -13,7 +13,7 @@ server_f: $(OBJECTS) server_f.o
 	$(CC) $(CFLAGS) -o server_f $(OBJECTS) server_f.o
 
 server_p: $(OBJECTS) server_p.o
-	$(CC) $(CFLAGS) -o server_p $(OBJECTS) server_p.o
+	$(CC) $(CFLAGS) -pthread -o server_p $(OBJECTS) server_p.o
 
 .c.o:
 	$(CC) $(CFLAGS) -c $<
@@ -52,4 +52,7 @@ resettest:
 	echo "" > $(TEST_LOG)
 
 checkcode:
-	./checkcode.sh
+	./checkcode.sh .
+
+loadtest:
+	./multiget.sh

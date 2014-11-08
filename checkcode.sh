@@ -1,4 +1,8 @@
 #!/bin/bash
+
+# Mike's awesome code-checker utility that checks C source files for projects
+# like this for various different code-smells.
+
 clear
 echo -e "\e[31m====== Files with C++ comments: ======\e[0m"
 grep -nR "//" $@
